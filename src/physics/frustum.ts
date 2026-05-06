@@ -2,9 +2,9 @@
  * PRD §FR-4 / §9 — 프로젝터 frustum + 룸 면 교차.
  * 좌표계: 룸 중심 = 원점, +Y 위.
  *
- * M1++ 변경:
- *  - 광선이 비활성 면에 떨어지면 active 면이 없을 때 fallback으로 사용
- *  - 4코너의 dominant surface(가장 많이 떨어진 면)을 surface로 결정
+ * M1+++++:
+ *  - sampleFrustumGrid: frustum image plane을 grid로 샘플링 → 면별 hit 점 그룹
+ *  - planeBasis: 면 위 점들을 2D angle sort 하기 위한 plane basis
  */
 
 import type { ProjectorInstance, ProjectorSpec, Room, SurfaceId, Vec3 } from '../types/scenario';
@@ -16,11 +16,21 @@ const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const scale = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
 const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V3, b: V3): V3 => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
 const length = (a: V3): number => Math.hypot(a[0], a[1], a[2]);
 const normalize = (a: V3): V3 => {
   const L = length(a) || 1;
   return [a[0] / L, a[1] / L, a[2] / L];
 };
+const lerpV3 = (a: V3, b: V3, t: number): V3 => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
 
 export function eulerBasis(rotationDeg: V3): { right: V3; up: V3; forward: V3 } {
   const [pitchD, yawD, rollD] = rotationDeg;
@@ -111,10 +121,6 @@ export function rayPlaneIntersect(
   return { t, point: add(origin, scale(dir, t)) };
 }
 
-/**
- * 광선이 닿는 면. 활성 면 우선. 활성 면에 못 닿으면 비활성 면(천장 등)에 fallback.
- * 빛은 물리적으로 어떤 면이든 닿는 게 정상이므로 거의 항상 not-null 반환.
- */
 export function castRayToActiveSurfaces(
   origin: V3,
   dir: V3,
@@ -134,12 +140,9 @@ export function castRayToActiveSurfaces(
 }
 
 export interface ProjectionPolygon {
-  /** 4코너의 dominant surface (가장 많이 떨어진 면). 모든 코너 null이면 null. */
   surface: SurfaceId | null;
-  /** dominant surface가 활성 면인지. 비활성 면(천장 등)에 닿은 경우 false. */
   surfaceIsActive: boolean;
   corners: Array<{ surface: SurfaceId; point: V3; isActive: boolean } | null>;
-  /** 4코너 평면 위 다각형 면적(m²). dominant surface 평면 기준 근사. */
   area: number;
 }
 
@@ -151,7 +154,6 @@ export function projectFrustumOntoRoom(
     castRayToActiveSurfaces(frustum.origin, dir, room),
   ) as ProjectionPolygon['corners'];
 
-  // dominant surface 산출 (가장 많이 떨어진 면)
   const counts = new Map<SurfaceId, number>();
   for (const c of corners) {
     if (!c) continue;
@@ -165,15 +167,13 @@ export function projectFrustumOntoRoom(
       surface = id;
     }
   }
-  const surfaceIsActive =
-    surface !== null && !!room.surfaces[surface].active;
+  const surfaceIsActive = surface !== null && !!room.surfaces[surface].active;
 
   let area = NaN;
   if (corners.every((c) => c !== null)) {
     const pts = corners.map((c) => c!.point) as V3[];
     area = polygonArea3D(pts);
   }
-
   return { surface, surfaceIsActive, corners, area };
 }
 
@@ -192,6 +192,87 @@ export function polygonArea3D(pts: V3[]): number {
     nz += a[0] * b[1] - a[1] * b[0];
   }
   return Math.hypot(nx, ny, nz) / 2;
+}
+
+/** 면 normal에 수직인 두 단위벡터(plane basis) 반환. */
+export function planeBasis(normal: V3): { u: V3; v: V3 } {
+  const ref: V3 = Math.abs(normal[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const u = normalize(cross(normal, ref));
+  const v = normalize(cross(normal, u));
+  return { u, v };
+}
+
+/** 면 위 점들을 plane basis로 2D 좌표 변환한 뒤 centroid angle 기준으로 시계방향 정렬. */
+export function sortPointsByAngle(points: V3[], plane: SurfacePlane): V3[] {
+  if (points.length < 3) return points;
+  const { u, v } = planeBasis(plane.normal);
+  // centroid
+  let cx = 0, cy = 0, cz = 0;
+  for (const p of points) { cx += p[0]; cy += p[1]; cz += p[2]; }
+  cx /= points.length; cy /= points.length; cz /= points.length;
+  const c: V3 = [cx, cy, cz];
+  const angled = points.map((p) => {
+    const rel = sub(p, c);
+    const x = dot(rel, u);
+    const y = dot(rel, v);
+    return { p, a: Math.atan2(y, x) };
+  });
+  angled.sort((a, b) => a.a - b.a);
+  return angled.map((x) => x.p);
+}
+
+export interface SurfaceHitGroup {
+  surface: SurfaceId;
+  isActive: boolean;
+  normal: V3;
+  /** plane basis로 정렬된 면 위 점들 (시계방향) */
+  polygon: V3[];
+}
+
+/**
+ * frustum image plane을 N+1 × N+1 grid로 샘플링해 광선 발사 → 면별 hit 점 그룹.
+ * 면이 갈리는 케이스에서도 면별 부분 polygon 추출 가능.
+ */
+export function sampleFrustumGrid(
+  frustum: ProjectorFrustum,
+  room: Room,
+  gridN: number = 8,
+): SurfaceHitGroup[] {
+  const groups = new Map<SurfaceId, V3[]>();
+  // cornerDirs: TL=0, TR=1, BR=2, BL=3
+  const TL = frustum.cornerDirs[0];
+  const TR = frustum.cornerDirs[1];
+  const BR = frustum.cornerDirs[2];
+  const BL = frustum.cornerDirs[3];
+
+  for (let i = 0; i <= gridN; i++) {
+    for (let j = 0; j <= gridN; j++) {
+      const u = i / gridN;
+      const v = j / gridN;
+      const top = lerpV3(TL, TR, u);
+      const bot = lerpV3(BL, BR, u);
+      const dir = normalize(lerpV3(top, bot, v));
+      const hit = castRayToActiveSurfaces(frustum.origin, dir, room);
+      if (!hit) continue;
+      const arr = groups.get(hit.surface) || [];
+      arr.push(hit.point);
+      groups.set(hit.surface, arr);
+    }
+  }
+
+  const planes = roomPlanes(room);
+  const result: SurfaceHitGroup[] = [];
+  for (const [surface, pts] of groups) {
+    if (pts.length < 3) continue;
+    const plane = planes.find((p) => p.id === surface)!;
+    result.push({
+      surface,
+      isActive: !!room.surfaces[surface].active,
+      normal: plane.normal,
+      polygon: sortPointsByAngle(pts, plane),
+    });
+  }
+  return result;
 }
 
 export type { Vec3 };
