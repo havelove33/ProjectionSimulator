@@ -276,3 +276,70 @@ export function sampleFrustumGrid(
 }
 
 export type { Vec3 };
+
+export interface SurfaceQuadGroup {
+  surface: SurfaceId;
+  isActive: boolean;
+  normal: V3;
+  /** 각 quad는 [TL, TR, BR, BL] 4점 (월드 좌표) */
+  quads: V3[][];
+}
+
+/**
+ * frustum image plane을 (gridN+1)×(gridN+1) grid로 샘플링하고,
+ * 각 grid cell(인접 4점)이 모두 같은 면에 떨어진 경우에만 그 면 그룹에 quad로 추가.
+ * fan triangulation 대신 작은 quad들의 합집합으로 구현 — 비-convex 폴리곤 zigzag 문제 회피.
+ */
+export function sampleFrustumQuads(
+  frustum: ProjectorFrustum,
+  room: Room,
+  gridN: number = 12,
+): SurfaceQuadGroup[] {
+  const TL = frustum.cornerDirs[0];
+  const TR = frustum.cornerDirs[1];
+  const BR = frustum.cornerDirs[2];
+  const BL = frustum.cornerDirs[3];
+
+  type Hit = { surface: SurfaceId; point: V3; isActive: boolean } | null;
+  const hits: Hit[][] = [];
+  for (let i = 0; i <= gridN; i++) {
+    const row: Hit[] = [];
+    for (let j = 0; j <= gridN; j++) {
+      const u = i / gridN;
+      const v = j / gridN;
+      const top = lerpV3(TL, TR, u);
+      const bot = lerpV3(BL, BR, u);
+      const dir = normalize(lerpV3(top, bot, v));
+      row.push(castRayToActiveSurfaces(frustum.origin, dir, room));
+    }
+    hits.push(row);
+  }
+
+  const groups = new Map<SurfaceId, V3[][]>();
+  for (let i = 0; i < gridN; i++) {
+    for (let j = 0; j < gridN; j++) {
+      const a = hits[i][j];
+      const b = hits[i + 1][j];
+      const c = hits[i + 1][j + 1];
+      const d = hits[i][j + 1];
+      if (!a || !b || !c || !d) continue;
+      if (a.surface !== b.surface || b.surface !== c.surface || c.surface !== d.surface) continue;
+      const list = groups.get(a.surface) || [];
+      list.push([a.point, b.point, c.point, d.point]);
+      groups.set(a.surface, list);
+    }
+  }
+
+  const planes = roomPlanes(room);
+  const result: SurfaceQuadGroup[] = [];
+  for (const [surface, quads] of groups) {
+    const plane = planes.find((p) => p.id === surface)!;
+    result.push({
+      surface,
+      isActive: !!room.surfaces[surface].active,
+      normal: plane.normal,
+      quads,
+    });
+  }
+  return result;
+}

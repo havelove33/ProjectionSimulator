@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useScenarioStore, useSelectedProjector, effectiveGain } from '../store/scenarioStore';
 import { buildFrustum, projectFrustumOntoRoom } from '../physics/frustum';
 import { averageIlluminance, illuminanceToLuminance } from '../physics/illuminance';
 import { classifyLuminance, GRADE_COLOR } from '../physics/perception';
 import { SCREEN_MATERIALS } from '../data/screens';
 import { Section } from './fields';
+import PerceptualReferenceModal from './PerceptualReferenceModal';
 
 const SURFACE_LABEL: Record<string, string> = {
   floor: '바닥', ceiling: '천장', front: '정면', back: '후면', left: '좌측', right: '우측',
@@ -16,6 +17,7 @@ export default function RightPanel() {
   const people = useScenarioStore((s) => s.people);
   const customScreenGain = useScenarioStore((s) => s.customScreenGain);
   const { instance, spec } = useSelectedProjector();
+  const [refOpen, setRefOpen] = useState(false);
 
   const projection = useMemo(() => {
     if (!instance || !spec) return null;
@@ -91,7 +93,18 @@ export default function RightPanel() {
         </p>
       </Section>
 
-      <Section title="시감 평가 (인체공학)">
+      <Section
+        title="시감 평가 (인체공학)"
+        right={
+          <button
+            onClick={() => setRefOpen(true)}
+            className="rounded border border-neutral-700 bg-neutral-950 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-emerald-600 hover:text-emerald-400"
+            title="휘도(nit)별 시감 영향 근거 테이블 열기"
+          >
+            ⓘ 근거
+          </button>
+        }
+      >
         {!stats?.verdict && (
           <div className="text-xs text-neutral-500">프로젝터를 선택하면 표시됩니다.</div>
         )}
@@ -109,7 +122,6 @@ export default function RightPanel() {
                 {stats.verdict.region === 'mesopic' && '박명시 (color 약화)'}
                 {stats.verdict.region === 'scotopic' && '암소시 (color 미인지)'}
               </span>
-              <span className="text-[11px] text-neutral-500">· 권장 30–100 nit</span>
             </div>
             <p className="text-xs leading-relaxed text-neutral-300">{stats.verdict.message}</p>
             <div className="text-[11px] text-neutral-500">
@@ -122,6 +134,8 @@ export default function RightPanel() {
       <Section title="차폐 통계" placeholder>
         M6(관객 + 그림자)에서 활성화됩니다.
       </Section>
+
+      {refOpen && <PerceptualReferenceModal onClose={() => setRefOpen(false)} />}
     </div>
   );
 }

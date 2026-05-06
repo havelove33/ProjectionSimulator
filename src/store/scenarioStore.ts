@@ -9,7 +9,7 @@ import type {
 import { DEFAULTS } from '../types/scenario';
 
 const defaultRoom: Room = {
-  size: { w: 8, d: 6, h: 3 },
+  size: { w: 8, d: 6, h: 4 },
   surfaces: {
     floor: { active: true, material: 'white-matte' },
     ceiling: { active: false, material: 'white-matte' },

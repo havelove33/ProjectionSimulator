@@ -5,9 +5,9 @@ import { PROJECTOR_LIBRARY } from '../data/projectors';
 import {
   buildFrustum,
   projectFrustumOntoRoom,
-  sampleFrustumGrid,
+  sampleFrustumQuads,
   type ProjectorFrustum,
-  type SurfaceHitGroup,
+  type SurfaceQuadGroup,
   type V3,
 } from '../physics/frustum';
 import type { ProjectorInstance, ProjectorSpec, Room } from '../types/scenario';
@@ -66,15 +66,15 @@ function ProjectorRender({
 }) {
   const frustum = useMemo(() => buildFrustum(inst, spec), [inst, spec]);
   const projection = useMemo(() => projectFrustumOntoRoom(frustum, room), [frustum, room]);
-  const hitGroups = useMemo(() => sampleFrustumGrid(frustum, room, 10), [frustum, room]);
+  const quadGroups = useMemo(() => sampleFrustumQuads(frustum, room, 16), [frustum, room]);
 
   return (
     <group>
       <ProjectorBody inst={inst} color={color} selected={selected} onSelect={onSelect} />
       <FrustumLines frustum={frustum} projection={projection} color={color} />
 
-      {hitGroups.map((g) => (
-        <SurfacePolyFill key={g.surface} group={g} color={color} />
+      {quadGroups.map((g) => (
+        <SurfaceQuadFill key={g.surface} group={g} color={color} />
       ))}
 
       {projection.corners.map((c, i) =>
@@ -150,7 +150,7 @@ function FrustumLines({
   return (
     <>
       {segs.map((seg, i) => (
-        <Line key={i} points={seg} color={color} lineWidth={1.2} transparent opacity={0.7} />
+        <Line key={i} points={seg} color={color} lineWidth={1.2} transparent opacity={0.6} />
       ))}
     </>
   );
@@ -166,10 +166,11 @@ function CornerMarker({ point, color }: { point: V3; color: string }) {
 }
 
 /**
- * 한 면 위 정렬된 점들 → triangle fan polygon mesh.
- * 면 normal로 0.005m 띄워 z-fighting 방지.
+ * 면별 quad 그룹 → 두 삼각형씩 잘게 쪼개어 mesh.
+ * fan triangulation이 비-convex에서 깨지는 문제를 회피.
+ * 면 normal로 0.005m 띄움.
  */
-function SurfacePolyFill({ group, color }: { group: SurfaceHitGroup; color: string }) {
+function SurfaceQuadFill({ group, color }: { group: SurfaceQuadGroup; color: string }) {
   const positions = useMemo(() => {
     const eps = 0.005;
     const ofs = (p: V3): V3 => [
@@ -177,14 +178,14 @@ function SurfacePolyFill({ group, color }: { group: SurfaceHitGroup; color: stri
       p[1] + group.normal[1] * eps,
       p[2] + group.normal[2] * eps,
     ];
-    const pts = group.polygon.map(ofs);
-    if (pts.length < 3) return new Float32Array(0);
-    // fan triangulation: (p0, pi, pi+1)
     const arr: number[] = [];
-    for (let i = 1; i < pts.length - 1; i++) {
-      arr.push(pts[0][0], pts[0][1], pts[0][2]);
-      arr.push(pts[i][0], pts[i][1], pts[i][2]);
-      arr.push(pts[i + 1][0], pts[i + 1][1], pts[i + 1][2]);
+    for (const q of group.quads) {
+      const a = ofs(q[0]);
+      const b = ofs(q[1]);
+      const c = ofs(q[2]);
+      const d = ofs(q[3]);
+      arr.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+      arr.push(a[0], a[1], a[2], c[0], c[1], c[2], d[0], d[1], d[2]);
     }
     return new Float32Array(arr);
   }, [group]);
