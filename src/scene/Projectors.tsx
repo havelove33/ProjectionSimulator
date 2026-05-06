@@ -14,7 +14,7 @@ const SELECTED = '#22c55e';     // emerald-500
 const UNSELECTED = '#facc15';   // yellow-400
 
 /**
- * 모든 프로젝터를 렌더 — 프로젝터 본체 mesh + frustum 라인 + 면 위 투영 다각형.
+ * 모든 프로젝터를 렌더 — 본체 mesh + frustum 라인 + 면 위 투영 다각형 + 코너 마커.
  */
 export default function Projectors() {
   const projectors = useScenarioStore((s) => s.projectors);
@@ -63,20 +63,23 @@ function ProjectorRender({
   const projection = useMemo(() => projectFrustumOntoRoom(frustum, room), [frustum, room]);
   const color = selected ? SELECTED : UNSELECTED;
 
+  // 4 코너가 모두 면에 닿으면 그 점들을 polygon fan으로 채움.
+  // 면이 다르더라도 시각적 가이드로 그린다 — 정확한 polygon clipping은 M2/3에서.
+  const filledCorners =
+    projection.corners.every((c) => c !== null)
+      ? (projection.corners.map((c) => c!.point) as [V3, V3, V3, V3])
+      : null;
+
   return (
     <group>
-      {/* 프로젝터 본체: 작은 박스 + 광축 표시 */}
       <ProjectorBody inst={inst} color={color} onSelect={onSelect} />
-
-      {/* Frustum 라인: 4개 코너 광선이 면에 닿는 점까지 */}
       <FrustumLines frustum={frustum} projection={projection} color={color} />
 
-      {/* 면 위 투영 사각형 (4 코너가 같은 면에 떨어진 경우만) */}
-      {projection.surface && projection.corners.every((c) => c !== null) && (
-        <ProjectionPolygon
-          corners={projection.corners.map((c) => c!.point) as [V3, V3, V3, V3]}
-          color={color}
-        />
+      {filledCorners && <ProjectionFill corners={filledCorners} color={color} />}
+
+      {/* 광선 끝 마커 */}
+      {projection.corners.map((c, i) =>
+        c ? <CornerMarker key={i} point={c.point} color={color} /> : null,
       )}
     </group>
   );
@@ -91,7 +94,6 @@ function ProjectorBody({
   color: string;
   onSelect: () => void;
 }) {
-  // rotation은 도(deg) → three.js Euler(rad)로
   const rad = (d: number) => (d * Math.PI) / 180;
   const [px, py, pz] = inst.position;
   const [rx, ry, rz] = inst.rotation;
@@ -107,7 +109,6 @@ function ProjectorBody({
         <boxGeometry args={[0.3, 0.18, 0.4]} />
         <meshStandardMaterial color={color} />
       </mesh>
-      {/* 광축 화살표 (로컬 -Z 방향) */}
       <mesh position={[0, 0, -0.35]} rotation={[Math.PI / 2, 0, 0]}>
         <coneGeometry args={[0.05, 0.12, 12]} />
         <meshStandardMaterial color={color} />
@@ -125,11 +126,9 @@ function FrustumLines({
   projection: ReturnType<typeof projectFrustumOntoRoom>;
   color: string;
 }) {
-  const points = useMemo(() => {
-    const segs: V3[][] = [];
-    // 4개 코너 광선
+  const segs = useMemo(() => {
+    const out: V3[][] = [];
     projection.corners.forEach((corner, i) => {
-      // 면에 닿으면 닿은 지점까지, 못 닿으면 unit distance 두 배 정도까지 표시
       let end: V3;
       if (corner) {
         end = corner.point;
@@ -141,37 +140,48 @@ function FrustumLines({
           frustum.origin[2] + dir[2] * 5,
         ];
       }
-      segs.push([frustum.origin, end]);
+      out.push([frustum.origin, end]);
     });
-
-    // 면 위 사각형 외곽선 (4코너가 모두 같은 면일 때만)
-    if (projection.surface && projection.corners.every((c) => c !== null)) {
+    if (projection.corners.every((c) => c !== null)) {
       const pts = projection.corners.map((c) => c!.point) as V3[];
-      segs.push([pts[0], pts[1]]);
-      segs.push([pts[1], pts[2]]);
-      segs.push([pts[2], pts[3]]);
-      segs.push([pts[3], pts[0]]);
+      out.push([pts[0], pts[1]]);
+      out.push([pts[1], pts[2]]);
+      out.push([pts[2], pts[3]]);
+      out.push([pts[3], pts[0]]);
     }
-    return segs;
+    return out;
   }, [frustum, projection]);
 
   return (
     <>
-      {points.map((seg, i) => (
-        <Line key={i} points={seg} color={color} lineWidth={1.2} transparent opacity={0.85} />
+      {segs.map((seg, i) => (
+        <Line key={i} points={seg} color={color} lineWidth={1.4} transparent opacity={0.9} />
       ))}
     </>
   );
 }
 
-function ProjectionPolygon({
+function CornerMarker({ point, color }: { point: V3; color: string }) {
+  return (
+    <mesh position={point}>
+      <sphereGeometry args={[0.06, 12, 12]} />
+      <meshBasicMaterial color={color} />
+    </mesh>
+  );
+}
+
+/**
+ * 4 코너로 만든 사각형(키스톤) 메쉬. 두 삼각형으로 분해.
+ * - depthWrite=false / polygonOffset로 z-fighting 방지
+ * - 면이 다르더라도 시각적 가이드를 그림(코너가 다른 면이면 휘어진 사각형이 됨)
+ */
+function ProjectionFill({
   corners,
   color,
 }: {
   corners: [V3, V3, V3, V3];
   color: string;
 }) {
-  // 4코너로 사각형 메쉬 — 두 삼각형으로 분해
   const positions = useMemo(() => {
     const a = corners[0];
     const b = corners[1];
@@ -196,7 +206,16 @@ function ProjectionPolygon({
           count={positions.length / 3}
         />
       </bufferGeometry>
-      <meshBasicMaterial color={color} transparent opacity={0.25} side={2 /* DoubleSide */} />
+      <meshBasicMaterial
+        color={color}
+        transparent
+        opacity={0.55}
+        side={2 /* DoubleSide */}
+        depthWrite={false}
+        polygonOffset
+        polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1}
+      />
     </mesh>
   );
 }
