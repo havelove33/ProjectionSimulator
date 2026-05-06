@@ -2,9 +2,10 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import { useScenarioStore } from '../store/scenarioStore';
 import Room from './Room';
+import Projectors from './Projectors';
 
 /**
- * PRD §10.2 — R3F 메인 캔버스. M0에서는 룸 박스 + 그리드 + 조명만 표시.
+ * PRD §10.2 — R3F 메인 캔버스. M1에서 Projectors 추가됨.
  */
 export default function Scene() {
   const room = useScenarioStore((s) => s.room);
@@ -23,6 +24,7 @@ export default function Scene() {
       <directionalLight position={[10, 20, 10]} intensity={0.85} castShadow />
 
       <Room />
+      <Projectors />
 
       <Grid
         args={[40, 40]}
