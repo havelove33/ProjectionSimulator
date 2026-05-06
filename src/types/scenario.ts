@@ -1,6 +1,5 @@
 /**
  * PRD §10.3 데이터 모델 — v1 시나리오 타입 정의.
- * M0 단계에서는 타입만 선언하고, 실제 사용은 M1 이후 점진 확장.
  */
 
 export type Vec3 = [number, number, number];
@@ -15,29 +14,32 @@ export interface SurfaceConfig {
 }
 
 export interface Room {
-  size: { w: number; d: number; h: number }; // m
+  size: { w: number; d: number; h: number };
   surfaces: Record<SurfaceId, SurfaceConfig>;
 }
 
 export interface ProjectorSpec {
   id: string;
   model: string;
+  resolutionLabel?: string;
   ansiLumen: number;
   resolution: [number, number];
   aspect: number;
   throwRatio: { min: number; max: number };
   lensShift?: { hPct: [number, number]; vPct: [number, number] };
   contrast?: number;
+  maxDiagonalInch?: number;
   source?: 'laser' | 'lamp';
 }
 
 export interface ProjectorInstance {
   id: string;
   specId: string;
+  displayName: string;
   position: Vec3;
-  rotation: Vec3; // yaw, pitch, roll (deg)
-  zoom: number; // 0..1, throwRatio 보간
-  shift: { h: number; v: number }; // %
+  rotation: Vec3;
+  zoom: number;
+  shift: { h: number; v: number };
   enabled: boolean;
   groupId?: string;
 }
@@ -50,9 +52,9 @@ export interface ScreenMaterial {
 
 export interface Person {
   id: string;
-  position: [number, number]; // (x, z), y는 바닥
-  height: number; // m
-  shoulderRadius: number; // m
+  position: [number, number];
+  height: number;
+  shoulderRadius: number;
   posture: 'standing' | 'sitting' | 'raisedArms';
   enabled: boolean;
   groupId?: string;
@@ -68,7 +70,7 @@ export interface Obstacle {
 export interface Viewer {
   id: string;
   position: Vec3;
-  eyeHeight: number; // m
+  eyeHeight: number;
   active: boolean;
 }
 
@@ -96,4 +98,5 @@ export const DEFAULTS = {
   personPosture: 'standing' as const,
   audienceLayout: 'poisson' as const,
   sampleResolution: 100,
+  maxProjectors: 5,
 } as const;

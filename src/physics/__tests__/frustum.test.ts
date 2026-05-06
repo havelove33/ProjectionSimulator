@@ -71,6 +71,7 @@ describe('buildFrustum — throw=1, aspect=1.6, unit distance에서 폭 1m', () 
   // 광원이 (0,3,0)에서 -Y(바닥)을 향하면 면적 계산이 깔끔
   const inst: ProjectorInstance = {
     id: 'i',
+    displayName: 'test',
     specId: spec.id,
     position: [0, 3, 0],
     rotation: [-90, 0, 0], // pitch -90 → 광축이 -Y
@@ -117,6 +118,7 @@ describe('projectFrustumOntoRoom (수직 천장→바닥 투사)', () => {
   // 광원 (0, 3, 0) at 천장 위치, 광축 -Y, throw=1
   const inst: ProjectorInstance = {
     id: 'i',
+    displayName: 'test',
     specId: spec.id,
     position: [0, 3, 0],
     rotation: [-90, 0, 0],

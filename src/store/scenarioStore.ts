@@ -4,7 +4,7 @@ import { DEFAULTS } from '../types/scenario';
 
 /**
  * PRD §10.2 store.
- * M1: 프로젝터 추가/선택/위치·회전·줌·시프트 갱신·삭제 + 단일 프로젝터 frustum 컨텍스트.
+ * M1+: 프로젝터 5대 cap, 별명, 인스턴스별 사양 편집(spec 복제 모델).
  */
 
 const defaultRoom: Room = {
@@ -44,9 +44,15 @@ interface ScenarioActions {
   setRoomSize: (partial: Partial<Room['size']>) => void;
   setSurfaceActive: (id: keyof Room['surfaces'], active: boolean) => void;
 
-  addProjector: (spec: ProjectorSpec, init?: Partial<ProjectorInstance>) => string;
+  /** spec을 복제해서 새 인스턴스 추가. 5대 cap 초과 시 null 반환. */
+  addProjector: (
+    template: ProjectorSpec,
+    init?: Partial<ProjectorInstance>,
+  ) => string | null;
   removeProjector: (id: string) => void;
   updateProjector: (id: string, partial: Partial<ProjectorInstance>) => void;
+  /** 인스턴스에 매핑된 spec(customSpecs[i])을 부분 갱신. */
+  updateSpec: (specId: string, partial: Partial<ProjectorSpec>) => void;
   selectProjector: (id: string | null) => void;
 
   reset: () => void;
@@ -56,8 +62,8 @@ const initialUI: UIState = {
   selectedProjectorId: null,
 };
 
-let nextId = 1;
-const genId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${nextId++}`;
+let nextSeq = 1;
+const genId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${nextSeq++}`;
 
 function defaultPlacement(room: Room): {
   position: [number, number, number];
@@ -70,16 +76,17 @@ function defaultPlacement(room: Room): {
   };
 }
 
+function defaultDisplayName(existingCount: number): string {
+  return `프로젝터 ${existingCount + 1}`;
+}
+
 export const useScenarioStore = create<Scenario & UIState & ScenarioActions>((set, get) => ({
   ...initialScenario,
   ...initialUI,
 
   setRoomSize: (partial) =>
     set((state) => ({
-      room: {
-        ...state.room,
-        size: { ...state.room.size, ...partial },
-      },
+      room: { ...state.room, size: { ...state.room.size, ...partial } },
     })),
 
   setSurfaceActive: (id, active) =>
@@ -93,12 +100,19 @@ export const useScenarioStore = create<Scenario & UIState & ScenarioActions>((se
       },
     })),
 
-  addProjector: (spec, init = {}) => {
+  addProjector: (template, init = {}) => {
+    const state = get();
+    if (state.projectors.length >= DEFAULTS.maxProjectors) return null;
+
+    const newSpecId = genId('spec');
+    const clonedSpec: ProjectorSpec = { ...template, id: newSpecId };
+
+    const placement = defaultPlacement(state.room);
     const id = genId('proj');
-    const placement = defaultPlacement(get().room);
     const instance: ProjectorInstance = {
       id,
-      specId: spec.id,
+      specId: newSpecId,
+      displayName: defaultDisplayName(state.projectors.length),
       position: placement.position,
       rotation: placement.rotation,
       zoom: 0,
@@ -106,25 +120,40 @@ export const useScenarioStore = create<Scenario & UIState & ScenarioActions>((se
       enabled: true,
       ...init,
     };
-    set((state) => ({
-      projectors: [...state.projectors, instance],
-      customSpecs: state.customSpecs.find((s) => s.id === spec.id)
-        ? state.customSpecs
-        : [...state.customSpecs, spec],
+
+    set((s) => ({
+      projectors: [...s.projectors, instance],
+      customSpecs: [...s.customSpecs, clonedSpec],
       selectedProjectorId: id,
     }));
     return id;
   },
 
   removeProjector: (id) =>
-    set((state) => ({
-      projectors: state.projectors.filter((p) => p.id !== id),
-      selectedProjectorId: state.selectedProjectorId === id ? null : state.selectedProjectorId,
-    })),
+    set((state) => {
+      const removed = state.projectors.find((p) => p.id === id);
+      const remainingProjectors = state.projectors.filter((p) => p.id !== id);
+      const stillUsedSpecIds = new Set(remainingProjectors.map((p) => p.specId));
+      // 다른 인스턴스가 안 쓰는 customSpec은 정리
+      const remainingSpecs = state.customSpecs.filter(
+        (s) => !removed || s.id !== removed.specId || stillUsedSpecIds.has(s.id),
+      );
+      return {
+        projectors: remainingProjectors,
+        customSpecs: remainingSpecs,
+        selectedProjectorId:
+          state.selectedProjectorId === id ? null : state.selectedProjectorId,
+      };
+    }),
 
   updateProjector: (id, partial) =>
     set((state) => ({
       projectors: state.projectors.map((p) => (p.id === id ? { ...p, ...partial } : p)),
+    })),
+
+  updateSpec: (specId, partial) =>
+    set((state) => ({
+      customSpecs: state.customSpecs.map((s) => (s.id === specId ? { ...s, ...partial } : s)),
     })),
 
   selectProjector: (id) => set({ selectedProjectorId: id }),
