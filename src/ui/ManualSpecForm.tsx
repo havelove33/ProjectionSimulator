@@ -74,7 +74,8 @@ export function ManualSpecForm({ onCreate }: { onCreate: (spec: ProjectorSpec) =
         className="w-full rounded bg-emerald-600 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-neutral-700"
         disabled={!model || !Number.isFinite(t)}
         onClick={() => {
-          const tr = round2(t);
+          const tMin = round2(t);
+          const tMax = round2(t * 1.3);
           const spec: ProjectorSpec = {
             id: 'manual-' + Date.now().toString(36),
             model: model || '사용자 정의',
@@ -82,7 +83,7 @@ export function ManualSpecForm({ onCreate }: { onCreate: (spec: ProjectorSpec) =
             ansiLumen: ansi,
             resolution: [resW, resH],
             aspect: round2(aspect),
-            throwRatio: { min: tr, max: tr },
+            throwRatio: { min: tMin, max: tMax },
             contrast: contrast || undefined,
             maxDiagonalInch: maxDiag || undefined,
           };

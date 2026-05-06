@@ -52,6 +52,10 @@ interface ScenarioActions {
   updateSpec: (specId: string, partial: Partial<ProjectorSpec>) => void;
   selectProjector: (id: string | null) => void;
 
+  /** 저장/불러오기용 스냅샷·복원 */
+  getScenarioSnapshot: () => Scenario;
+  loadScenario: (s: Scenario) => void;
+
   reset: () => void;
 }
 
@@ -153,6 +157,42 @@ export const useScenarioStore = create<Scenario & UIState & ScenarioActions>((se
 
   selectProjector: (id) => set({ selectedProjectorId: id }),
 
+  getScenarioSnapshot: () => {
+    const s = get();
+    const snap: Scenario = {
+      version: '1',
+      name: s.name,
+      room: s.room,
+      projectors: s.projectors,
+      customSpecs: s.customSpecs,
+      people: s.people,
+      obstacles: s.obstacles,
+      viewers: s.viewers,
+      units: s.units,
+      sampleResolution: s.sampleResolution,
+      customScreenGain: s.customScreenGain,
+      occlusion: s.occlusion,
+    };
+    return snap;
+  },
+
+  loadScenario: (sc) =>
+    set({
+      version: sc.version,
+      name: sc.name,
+      room: sc.room,
+      projectors: sc.projectors,
+      customSpecs: sc.customSpecs,
+      people: sc.people ?? [],
+      obstacles: sc.obstacles ?? [],
+      viewers: sc.viewers ?? [],
+      units: sc.units,
+      sampleResolution: sc.sampleResolution,
+      customScreenGain: sc.customScreenGain ?? DEFAULTS.customScreenGain,
+      occlusion: sc.occlusion,
+      selectedProjectorId: null,
+    }),
+
   reset: () => set({ ...initialScenario, ...initialUI }),
 }));
 
@@ -169,19 +209,15 @@ export function useSelectedProjector(): {
   return { instance, spec };
 }
 
-/**
- * 모든 면이 같은 재질(setAllSurfaceMaterial로 동기화 가정)이라는 전제 하에 현재 재질 ID 반환.
- * 면별로 달랐으면 floor의 재질을 대표값으로 사용.
- */
 export function useGlobalScreenMaterialId(): ScreenMaterialId {
   return useScenarioStore((s) => s.room.surfaces.floor.material);
 }
 
-/**
- * 현재 시나리오에 적용되는 effective gain.
- * 'custom' 재질이면 customScreenGain, 그 외는 SCREEN_MATERIALS의 gain.
- */
-export function effectiveGain(materialId: ScreenMaterialId, customGain: number, materials: { id: string; gain: number }[]): number {
+export function effectiveGain(
+  materialId: ScreenMaterialId,
+  customGain: number,
+  materials: { id: string; gain: number }[],
+): number {
   if (materialId === 'custom') return customGain;
   return materials.find((m) => m.id === materialId)?.gain ?? 1.0;
 }

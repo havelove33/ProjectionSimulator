@@ -192,7 +192,7 @@ function SurfaceQuadFill({ group, color }: { group: SurfaceQuadGroup; color: str
 
   if (positions.length === 0) return null;
   return (
-    <mesh>
+    <mesh renderOrder={2}>
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
@@ -203,9 +203,9 @@ function SurfaceQuadFill({ group, color }: { group: SurfaceQuadGroup; color: str
       <meshBasicMaterial
         color={color}
         transparent
-        opacity={0.55}
+        opacity={0.7}
         side={2 /* DoubleSide */}
-        depthWrite={false}
+        depthTest={false}
       />
     </mesh>
   );

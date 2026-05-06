@@ -341,16 +341,22 @@ export default function ProjectorPanel() {
               />
             </div>
 
-            <SliderField
-              label={`Zoom (현재 throw ${effectiveThrowRatio(spec, instance.zoom).toFixed(2)})`}
-              value={instance.zoom}
-              onChange={(v) => updateProjector(instance.id, { zoom: v })}
-              min={0}
-              max={1}
-              formatValue={(v) =>
-                `${effectiveThrowRatio(spec, v).toFixed(2)} (${(v * 100).toFixed(0)}%)`
-              }
-            />
+            {spec.throwRatio.min === spec.throwRatio.max ? (
+              <div className="rounded border border-neutral-800 bg-neutral-900/40 px-2 py-1.5 text-[11px] text-neutral-400">
+                Zoom — throw min/max가 동일({spec.throwRatio.min.toFixed(2)})하여 줌 효과가 없습니다. 사양 편집의 Throw max를 늘리세요(예: min × 1.3).
+              </div>
+            ) : (
+              <SliderField
+                label={`Zoom (현재 throw ${effectiveThrowRatio(spec, instance.zoom).toFixed(2)})`}
+                value={instance.zoom}
+                onChange={(v) => updateProjector(instance.id, { zoom: v })}
+                min={0}
+                max={1}
+                formatValue={(v) =>
+                  `${effectiveThrowRatio(spec, v).toFixed(2)} (${(v * 100).toFixed(0)}%)`
+                }
+              />
+            )}
             <SliderField
               label="Lens shift H"
               value={instance.shift.h}

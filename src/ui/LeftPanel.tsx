@@ -89,14 +89,6 @@ export default function LeftPanel() {
       </Section>
 
       <ProjectorPanel />
-
-      <Section title="뷰어 스윗스팟 (Off-axis)" placeholder>
-        M5에서 활성화 — 스윗스팟 위치, 면별 view/proj 매트릭스 export
-      </Section>
-
-      <Section title="관객 (People)" placeholder>
-        M6에서 활성화 — 기본 20명, 0–100명 슬라이더, 패턴 헬퍼
-      </Section>
     </div>
   );
 }

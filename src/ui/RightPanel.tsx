@@ -131,10 +131,6 @@ export default function RightPanel() {
         )}
       </Section>
 
-      <Section title="차폐 통계" placeholder>
-        M6(관객 + 그림자)에서 활성화됩니다.
-      </Section>
-
       {refOpen && <PerceptualReferenceModal onClose={() => setRefOpen(false)} />}
     </div>
   );
