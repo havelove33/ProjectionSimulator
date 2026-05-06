@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { Scenario, Room, ProjectorInstance, ProjectorSpec } from '../types/scenario';
+import type {
+  Scenario,
+  Room,
+  ProjectorInstance,
+  ProjectorSpec,
+  ScreenMaterialId,
+} from '../types/scenario';
 import { DEFAULTS } from '../types/scenario';
-
-/**
- * PRD §10.2 store.
- * M1+: 프로젝터 5대 cap, 별명, 인스턴스별 사양 편집(spec 복제 모델).
- */
 
 const defaultRoom: Room = {
   size: { w: 8, d: 6, h: 3 },
@@ -30,10 +31,8 @@ export const initialScenario: Scenario = {
   viewers: [],
   units: 'lux',
   sampleResolution: DEFAULTS.sampleResolution,
-  occlusion: {
-    enabled: true,
-    softShadow: false,
-  },
+  customScreenGain: DEFAULTS.customScreenGain,
+  occlusion: { enabled: true, softShadow: false },
 };
 
 interface UIState {
@@ -43,24 +42,20 @@ interface UIState {
 interface ScenarioActions {
   setRoomSize: (partial: Partial<Room['size']>) => void;
   setSurfaceActive: (id: keyof Room['surfaces'], active: boolean) => void;
+  /** 모든 면의 스크린 재질을 한 번에 동일하게 설정 */
+  setAllSurfaceMaterial: (id: ScreenMaterialId) => void;
+  setCustomScreenGain: (gain: number) => void;
 
-  /** spec을 복제해서 새 인스턴스 추가. 5대 cap 초과 시 null 반환. */
-  addProjector: (
-    template: ProjectorSpec,
-    init?: Partial<ProjectorInstance>,
-  ) => string | null;
+  addProjector: (template: ProjectorSpec, init?: Partial<ProjectorInstance>) => string | null;
   removeProjector: (id: string) => void;
   updateProjector: (id: string, partial: Partial<ProjectorInstance>) => void;
-  /** 인스턴스에 매핑된 spec(customSpecs[i])을 부분 갱신. */
   updateSpec: (specId: string, partial: Partial<ProjectorSpec>) => void;
   selectProjector: (id: string | null) => void;
 
   reset: () => void;
 }
 
-const initialUI: UIState = {
-  selectedProjectorId: null,
-};
+const initialUI: UIState = { selectedProjectorId: null };
 
 let nextSeq = 1;
 const genId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${nextSeq++}`;
@@ -70,10 +65,7 @@ function defaultPlacement(room: Room): {
   rotation: [number, number, number];
 } {
   const { d, h } = room.size;
-  return {
-    position: [0, h * 0.9, -d * 0.4],
-    rotation: [-25, 0, 0],
-  };
+  return { position: [0, h * 0.9, -d * 0.4], rotation: [-25, 0, 0] };
 }
 
 function defaultDisplayName(existingCount: number): string {
@@ -93,20 +85,26 @@ export const useScenarioStore = create<Scenario & UIState & ScenarioActions>((se
     set((state) => ({
       room: {
         ...state.room,
-        surfaces: {
-          ...state.room.surfaces,
-          [id]: { ...state.room.surfaces[id], active },
-        },
+        surfaces: { ...state.room.surfaces, [id]: { ...state.room.surfaces[id], active } },
       },
     })),
+
+  setAllSurfaceMaterial: (id) =>
+    set((state) => {
+      const next = { ...state.room.surfaces };
+      (Object.keys(next) as Array<keyof Room['surfaces']>).forEach((sid) => {
+        next[sid] = { ...next[sid], material: id };
+      });
+      return { room: { ...state.room, surfaces: next } };
+    }),
+
+  setCustomScreenGain: (gain) => set({ customScreenGain: gain }),
 
   addProjector: (template, init = {}) => {
     const state = get();
     if (state.projectors.length >= DEFAULTS.maxProjectors) return null;
-
     const newSpecId = genId('spec');
     const clonedSpec: ProjectorSpec = { ...template, id: newSpecId };
-
     const placement = defaultPlacement(state.room);
     const id = genId('proj');
     const instance: ProjectorInstance = {
@@ -120,7 +118,6 @@ export const useScenarioStore = create<Scenario & UIState & ScenarioActions>((se
       enabled: true,
       ...init,
     };
-
     set((s) => ({
       projectors: [...s.projectors, instance],
       customSpecs: [...s.customSpecs, clonedSpec],
@@ -133,16 +130,14 @@ export const useScenarioStore = create<Scenario & UIState & ScenarioActions>((se
     set((state) => {
       const removed = state.projectors.find((p) => p.id === id);
       const remainingProjectors = state.projectors.filter((p) => p.id !== id);
-      const stillUsedSpecIds = new Set(remainingProjectors.map((p) => p.specId));
-      // 다른 인스턴스가 안 쓰는 customSpec은 정리
+      const stillUsed = new Set(remainingProjectors.map((p) => p.specId));
       const remainingSpecs = state.customSpecs.filter(
-        (s) => !removed || s.id !== removed.specId || stillUsedSpecIds.has(s.id),
+        (s) => !removed || s.id !== removed.specId || stillUsed.has(s.id),
       );
       return {
         projectors: remainingProjectors,
         customSpecs: remainingSpecs,
-        selectedProjectorId:
-          state.selectedProjectorId === id ? null : state.selectedProjectorId,
+        selectedProjectorId: state.selectedProjectorId === id ? null : state.selectedProjectorId,
       };
     }),
 
@@ -172,4 +167,21 @@ export function useSelectedProjector(): {
   const instance = id ? projectors.find((p) => p.id === id) ?? null : null;
   const spec = instance ? customSpecs.find((s) => s.id === instance.specId) ?? null : null;
   return { instance, spec };
+}
+
+/**
+ * 모든 면이 같은 재질(setAllSurfaceMaterial로 동기화 가정)이라는 전제 하에 현재 재질 ID 반환.
+ * 면별로 달랐으면 floor의 재질을 대표값으로 사용.
+ */
+export function useGlobalScreenMaterialId(): ScreenMaterialId {
+  return useScenarioStore((s) => s.room.surfaces.floor.material);
+}
+
+/**
+ * 현재 시나리오에 적용되는 effective gain.
+ * 'custom' 재질이면 customScreenGain, 그 외는 SCREEN_MATERIALS의 gain.
+ */
+export function effectiveGain(materialId: ScreenMaterialId, customGain: number, materials: { id: string; gain: number }[]): number {
+  if (materialId === 'custom') return customGain;
+  return materials.find((m) => m.id === materialId)?.gain ?? 1.0;
 }

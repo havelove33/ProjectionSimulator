@@ -1,16 +1,20 @@
-import { useScenarioStore } from '../store/scenarioStore';
+import {
+  useScenarioStore,
+  useGlobalScreenMaterialId,
+} from '../store/scenarioStore';
 import type { SurfaceId } from '../types/scenario';
+import { SCREEN_MATERIALS } from '../data/screens';
 import { NumberField, Section } from './fields';
 import ProjectorPanel from './ProjectorPanel';
 
-/**
- * PRD §8 좌측 패널 — M1: 룸 + 프로젝터 활성화.
- * 스윗스팟/관객은 후속 마일스톤.
- */
 export default function LeftPanel() {
   const room = useScenarioStore((s) => s.room);
   const setRoomSize = useScenarioStore((s) => s.setRoomSize);
   const setSurfaceActive = useScenarioStore((s) => s.setSurfaceActive);
+  const setAllSurfaceMaterial = useScenarioStore((s) => s.setAllSurfaceMaterial);
+  const customGain = useScenarioStore((s) => s.customScreenGain);
+  const setCustomGain = useScenarioStore((s) => s.setCustomScreenGain);
+  const materialId = useGlobalScreenMaterialId();
 
   const surfaceList: { id: SurfaceId; label: string }[] = [
     { id: 'floor', label: '바닥' },
@@ -25,24 +29,9 @@ export default function LeftPanel() {
     <div className="flex flex-col gap-4 p-4 text-sm">
       <Section title="공간(룸) 치수">
         <div className="grid grid-cols-3 gap-2">
-          <NumberField
-            label="가로"
-            value={room.size.w}
-            onChange={(v) => setRoomSize({ w: v })}
-            suffix="m"
-          />
-          <NumberField
-            label="세로"
-            value={room.size.d}
-            onChange={(v) => setRoomSize({ d: v })}
-            suffix="m"
-          />
-          <NumberField
-            label="높이"
-            value={room.size.h}
-            onChange={(v) => setRoomSize({ h: v })}
-            suffix="m"
-          />
+          <NumberField label="가로" value={room.size.w} onChange={(v) => setRoomSize({ w: v })} suffix="m" />
+          <NumberField label="세로" value={room.size.d} onChange={(v) => setRoomSize({ d: v })} suffix="m" />
+          <NumberField label="높이" value={room.size.h} onChange={(v) => setRoomSize({ h: v })} suffix="m" />
         </div>
 
         <div className="mt-3">
@@ -64,6 +53,39 @@ export default function LeftPanel() {
             ))}
           </div>
         </div>
+      </Section>
+
+      <Section title="스크린 재질 (모든 면 일괄)">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-neutral-400">프리셋</span>
+          <select
+            className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-neutral-100 outline-none focus:border-neutral-500"
+            value={materialId}
+            onChange={(e) => setAllSurfaceMaterial(e.target.value as typeof materialId)}
+          >
+            {SCREEN_MATERIALS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {materialId === 'custom' && (
+          <div className="mt-2">
+            <NumberField
+              label="사용자 정의 게인"
+              value={customGain}
+              onChange={setCustomGain}
+              min={0}
+              max={3}
+              step={0.05}
+            />
+            <div className="mt-1 text-[11px] text-neutral-500">
+              0.05–3.0 범위 권장. 무광 페인트는 0.6–0.95, 하이게인 스크린은 1.2–1.8.
+            </div>
+          </div>
+        )}
       </Section>
 
       <ProjectorPanel />

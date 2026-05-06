@@ -6,7 +6,19 @@ export type Vec3 = [number, number, number];
 
 export type SurfaceId = 'floor' | 'ceiling' | 'front' | 'back' | 'left' | 'right';
 
-export type ScreenMaterialId = 'white-matte' | 'gray-08' | 'gray-06' | 'high-gain' | 'rear';
+export type ScreenMaterialId =
+  | 'white-matte'
+  | 'gray-08'
+  | 'gray-06'
+  | 'high-gain'
+  | 'rear'
+  | 'paint-white'
+  | 'paint-offwhite'
+  | 'paint-gray'
+  | 'paint-black'
+  | 'concrete'
+  | 'wood'
+  | 'custom';
 
 export interface SurfaceConfig {
   active: boolean;
@@ -85,6 +97,8 @@ export interface Scenario {
   viewers: Viewer[];
   units: 'lux' | 'nit';
   sampleResolution: number;
+  /** 'custom' 재질 선택 시 적용되는 사용자 정의 게인 */
+  customScreenGain: number;
   occlusion: {
     enabled: boolean;
     softShadow: false;
@@ -99,4 +113,5 @@ export const DEFAULTS = {
   audienceLayout: 'poisson' as const,
   sampleResolution: 100,
   maxProjectors: 5,
+  customScreenGain: 1.0,
 } as const;
