@@ -18,16 +18,16 @@ export default function Scene() {
       }}
       gl={{ antialias: true }}
     >
-      <color attach="background" args={['#0a0a0b']} />
-      <ambientLight intensity={0.25} />
-      <directionalLight position={[10, 20, 10]} intensity={0.6} castShadow />
+      <color attach="background" args={['#e4e4e7']} />
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[10, 20, 10]} intensity={0.85} castShadow />
 
       <Room />
 
       <Grid
         args={[40, 40]}
-        cellColor="#26262a"
-        sectionColor="#3a3a40"
+        cellColor="#a1a1aa"
+        sectionColor="#71717a"
         infiniteGrid
         fadeDistance={40}
         fadeStrength={2}

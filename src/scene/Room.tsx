@@ -19,38 +19,38 @@ export default function Room() {
       <mesh>
         <boxGeometry args={[w, h, d]} />
         <meshBasicMaterial visible={false} />
-        <Edges color="#5a5a64" threshold={1} />
+        <Edges color="#27272a" threshold={1} />
       </mesh>
 
       {/* 활성된 면을 반투명 패널로 표현 (M2에서 광도 히트맵으로 교체될 자리) */}
       {surfaces.floor.active && (
         <mesh position={[0, -h / 2, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[w, d]} />
-          <meshStandardMaterial color="#1a1a1d" side={DoubleSide} />
+          <meshStandardMaterial color="#52525b" side={DoubleSide} />
         </mesh>
       )}
       {surfaces.front.active && (
         <mesh position={[0, 0, -d / 2]}>
           <planeGeometry args={[w, h]} />
-          <meshStandardMaterial color="#1a1a1d" side={DoubleSide} transparent opacity={0.85} />
+          <meshStandardMaterial color="#52525b" side={DoubleSide} transparent opacity={0.85} />
         </mesh>
       )}
       {surfaces.back.active && (
         <mesh position={[0, 0, d / 2]} rotation={[0, Math.PI, 0]}>
           <planeGeometry args={[w, h]} />
-          <meshStandardMaterial color="#1a1a1d" side={DoubleSide} transparent opacity={0.85} />
+          <meshStandardMaterial color="#52525b" side={DoubleSide} transparent opacity={0.85} />
         </mesh>
       )}
       {surfaces.left.active && (
         <mesh position={[-w / 2, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
           <planeGeometry args={[d, h]} />
-          <meshStandardMaterial color="#1a1a1d" side={DoubleSide} transparent opacity={0.85} />
+          <meshStandardMaterial color="#52525b" side={DoubleSide} transparent opacity={0.85} />
         </mesh>
       )}
       {surfaces.right.active && (
         <mesh position={[w / 2, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
           <planeGeometry args={[d, h]} />
-          <meshStandardMaterial color="#1a1a1d" side={DoubleSide} transparent opacity={0.85} />
+          <meshStandardMaterial color="#52525b" side={DoubleSide} transparent opacity={0.85} />
         </mesh>
       )}
     </group>
