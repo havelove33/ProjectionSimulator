@@ -1,5 +1,6 @@
 /**
  * 좌측 패널에서 재사용하는 작은 입력 컴포넌트들.
+ * - 모든 입력은 grid 안에서도 폭이 늘어나지 않도록 min-w-0 + w-full 적용.
  */
 
 export function NumberField({
@@ -20,14 +21,14 @@ export function NumberField({
   suffix?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs text-neutral-400">
+    <label className="flex min-w-0 flex-col gap-1">
+      <span className="truncate text-xs text-neutral-400">
         {label}
         {suffix ? <span className="ml-1 text-neutral-500">({suffix})</span> : null}
       </span>
       <input
         type="number"
-        className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-neutral-100 outline-none focus:border-neutral-500"
+        className="w-full min-w-0 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-neutral-100 outline-none focus:border-neutral-500"
         value={Number.isFinite(value) ? value : 0}
         min={min}
         max={max}
@@ -59,16 +60,16 @@ export function SliderField({
   formatValue?: (v: number) => string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-neutral-400">{label}</span>
-        <span className="text-neutral-200 tabular-nums">
+    <label className="flex min-w-0 flex-col gap-1">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="truncate text-neutral-400">{label}</span>
+        <span className="shrink-0 text-neutral-200 tabular-nums">
           {formatValue ? formatValue(value) : value.toFixed(2)}
         </span>
       </div>
       <input
         type="range"
-        className="accent-emerald-500"
+        className="w-full accent-emerald-500"
         value={value}
         min={min}
         max={max}
@@ -92,11 +93,18 @@ export function Section({
 }) {
   return (
     <section className="rounded border border-neutral-800 bg-neutral-900/50 p-3">
-      <header className="mb-2 flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">{title}</h2>
+      <header className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="truncate text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          {title}
+        </h2>
         {right}
       </header>
       <div className={placeholder ? 'text-xs text-neutral-500' : ''}>{children}</div>
     </section>
   );
+}
+
+/** 표시용 소수 자릿수 헬퍼 — 저장값은 그대로지만 UI에 반영 시 소수점 N자리로 반올림. */
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

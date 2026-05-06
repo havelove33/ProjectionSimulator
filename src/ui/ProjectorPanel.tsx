@@ -2,17 +2,14 @@ import { useState } from 'react';
 import { useScenarioStore, useSelectedProjector } from '../store/scenarioStore';
 import { PROJECTOR_LIBRARY } from '../data/projectors';
 import { effectiveThrowRatio } from '../physics/frustum';
-import { throwRatioFromDistance } from '../physics/throwUtils';
 import { NumberField, SliderField, Section } from './fields';
+import { ManualSpecForm, ThrowFromDistance } from './ManualSpecForm';
 import { DEFAULTS } from '../types/scenario';
-import type { ProjectorSpec } from '../types/scenario';
 
-/**
- * 좌측 패널의 "프로젝터" 섹션 — M1+:
- *  - 라이브러리에서 추가 / 직접 입력으로 추가 (탭 전환)
- *  - 5대 cap, 별명 편집, 인스턴스별 사양 편집
- *  - "100인치 거리 X m" 입력으로 throw ratio 자동 환산
- */
+const INSTANCE_PALETTE = [
+  '#22c55e', '#facc15', '#3b82f6', '#ec4899', '#f97316', '#06b6d4', '#a855f7', '#ef4444',
+];
+
 export default function ProjectorPanel() {
   const projectors = useScenarioStore((s) => s.projectors);
   const customSpecs = useScenarioStore((s) => s.customSpecs);
@@ -35,9 +32,7 @@ export default function ProjectorPanel() {
         <button
           disabled={atCap}
           className={`rounded px-2 py-0.5 text-xs font-medium text-white ${
-            atCap
-              ? 'cursor-not-allowed bg-neutral-700'
-              : 'bg-emerald-600 hover:bg-emerald-500'
+            atCap ? 'cursor-not-allowed bg-neutral-700' : 'bg-emerald-600 hover:bg-emerald-500'
           }`}
           onClick={() => setPickerOpen((v) => !v)}
         >
@@ -114,16 +109,22 @@ export default function ProjectorPanel() {
       )}
 
       <ul className="space-y-1">
-        {projectors.map((p) => {
+        {projectors.map((p, idx) => {
           const s = customSpecs.find((c) => c.id === p.specId);
           const selected = p.id === selectedId;
+          const color = INSTANCE_PALETTE[idx % INSTANCE_PALETTE.length];
           return (
             <li
               key={p.id}
               className={`flex items-center gap-2 rounded px-2 py-1 text-xs ${
-                selected ? 'bg-emerald-900/40 ring-1 ring-emerald-700' : 'hover:bg-neutral-800'
+                selected ? 'bg-neutral-800 ring-1 ring-neutral-500' : 'hover:bg-neutral-800'
               }`}
             >
+              <span
+                className="inline-block h-3 w-3 shrink-0 rounded-full"
+                style={{ backgroundColor: color }}
+                title="3D 뷰의 이 프로젝터 색상"
+              />
               <input
                 type="checkbox"
                 checked={p.enabled}
@@ -148,7 +149,6 @@ export default function ProjectorPanel() {
 
       {instance && spec && (
         <div className="mt-3 space-y-3 border-t border-neutral-800 pt-3">
-          {/* 별명 */}
           <label className="flex flex-col gap-1">
             <span className="text-xs text-neutral-400">별명 (Display Name)</span>
             <input
@@ -159,7 +159,6 @@ export default function ProjectorPanel() {
             />
           </label>
 
-          {/* 사양 편집 */}
           <details className="rounded border border-neutral-800 bg-neutral-950/50 p-2" open>
             <summary className="cursor-pointer text-xs font-medium text-neutral-300">
               사양 편집
@@ -214,10 +213,10 @@ export default function ProjectorPanel() {
                   }
                   step={1}
                 />
-                <label className="flex flex-col gap-1">
-                  <span className="text-neutral-400">등급</span>
+                <label className="flex min-w-0 flex-col gap-1">
+                  <span className="truncate text-neutral-400">등급</span>
                   <input
-                    className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-neutral-100"
+                    className="w-full min-w-0 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-neutral-100"
                     value={spec.resolutionLabel ?? ''}
                     placeholder="WUXGA"
                     onChange={(e) => updateSpec(spec.id, { resolutionLabel: e.target.value })}
@@ -226,7 +225,7 @@ export default function ProjectorPanel() {
               </div>
 
               <div className="text-[11px] text-neutral-500">
-                종횡비(aspect) = {spec.aspect.toFixed(3)} (해상도로부터 자동)
+                aspect = {spec.aspect.toFixed(2)} (해상도로부터 자동)
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -248,18 +247,13 @@ export default function ProjectorPanel() {
                 />
               </div>
 
-              {/* 거리 → throw 환산 헬퍼 */}
               <ThrowFromDistance
                 aspect={spec.aspect}
-                onApply={(throwRatio, isRange) => {
+                onApply={(t, isRange) => {
                   if (isRange) {
-                    updateSpec(spec.id, {
-                      throwRatio: { min: throwRatio, max: spec.throwRatio.max },
-                    });
+                    updateSpec(spec.id, { throwRatio: { min: t, max: spec.throwRatio.max } });
                   } else {
-                    updateSpec(spec.id, {
-                      throwRatio: { min: throwRatio, max: throwRatio },
-                    });
+                    updateSpec(spec.id, { throwRatio: { min: t, max: t } });
                   }
                 }}
               />
@@ -274,7 +268,6 @@ export default function ProjectorPanel() {
             </div>
           </details>
 
-          {/* 위치 / 회전 / 줌 / 시프트 */}
           <div className="space-y-2 rounded border border-neutral-800 bg-neutral-950/50 p-2">
             <div className="text-xs font-medium text-neutral-300">위치 / 회전</div>
             <div className="grid grid-cols-3 gap-1">
@@ -384,144 +377,5 @@ export default function ProjectorPanel() {
         </div>
       )}
     </Section>
-  );
-}
-
-/**
- * 카탈로그가 "100인치 화면 거리 2.9m" 형식으로 throw를 줄 때 빠르게 환산해주는 위젯.
- */
-function ThrowFromDistance({
-  aspect,
-  onApply,
-}: {
-  aspect: number;
-  onApply: (throwRatio: number, isRange: boolean) => void;
-}) {
-  const [diag, setDiag] = useState(100);
-  const [dist, setDist] = useState(2.9);
-  const [applyAsRange, setApplyAsRange] = useState(false);
-  const t = throwRatioFromDistance(diag, dist, aspect);
-
-  return (
-    <div className="rounded border border-neutral-800 bg-neutral-900/40 p-2">
-      <div className="mb-1 text-[11px] text-neutral-400">
-        거리→throw 환산 (카탈로그 "X인치 거리 Y m")
-      </div>
-      <div className="flex items-end gap-1 text-xs">
-        <div className="flex-1">
-          <NumberField label="화면" value={diag} onChange={setDiag} step={10} suffix="인치" />
-        </div>
-        <div className="flex-1">
-          <NumberField label="거리" value={dist} onChange={setDist} step={0.1} suffix="m" />
-        </div>
-      </div>
-      <div className="mt-1 text-[11px] text-neutral-300">
-        → throw ratio ≈ <span className="font-medium">{Number.isFinite(t) ? t.toFixed(3) : '—'}</span>
-      </div>
-      <label className="mt-1 flex items-center gap-1 text-[11px] text-neutral-400">
-        <input
-          type="checkbox"
-          checked={applyAsRange}
-          onChange={(e) => setApplyAsRange(e.target.checked)}
-          className="accent-emerald-500"
-        />
-        min만 갱신 (max는 유지)
-      </label>
-      <button
-        className="mt-1 w-full rounded bg-emerald-700 py-1 text-xs text-white hover:bg-emerald-600"
-        disabled={!Number.isFinite(t)}
-        onClick={() => onApply(t, applyAsRange)}
-      >
-        throw ratio에 적용
-      </button>
-    </div>
-  );
-}
-
-/**
- * 직접 입력 폼 — 빈 spec을 만들고 추가.
- */
-function ManualSpecForm({ onCreate }: { onCreate: (spec: ProjectorSpec) => void }) {
-  const [model, setModel] = useState('');
-  const [resW, setResW] = useState(1920);
-  const [resH, setResH] = useState(1080);
-  const [resLabel, setResLabel] = useState('FHD');
-  const [ansi, setAnsi] = useState(5000);
-  const [contrast, setContrast] = useState(100000);
-  const [maxDiag, setMaxDiag] = useState(300);
-  const [diagInch, setDiagInch] = useState(100);
-  const [distM, setDistM] = useState(2.9);
-
-  const aspect = resW / resH;
-  const throwRatio = throwRatioFromDistance(diagInch, distM, aspect);
-
-  return (
-    <div className="space-y-2 text-xs">
-      <label className="flex flex-col gap-1">
-        <span className="text-neutral-400">모델명</span>
-        <input
-          className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-neutral-100"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="예: EH-TW7400"
-        />
-      </label>
-      <div className="grid grid-cols-3 gap-1">
-        <NumberField label="해상도 W" value={resW} onChange={setResW} step={1} />
-        <NumberField label="해상도 H" value={resH} onChange={setResH} step={1} />
-        <label className="flex flex-col gap-1">
-          <span className="text-neutral-400">등급</span>
-          <input
-            className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-neutral-100"
-            value={resLabel}
-            onChange={(e) => setResLabel(e.target.value)}
-            placeholder="WUXGA / FHD"
-          />
-        </label>
-      </div>
-      <div className="grid grid-cols-2 gap-1">
-        <NumberField label="ANSI 루멘" value={ansi} onChange={setAnsi} step={100} suffix="lm" />
-        <NumberField label="명암비" value={contrast} onChange={setContrast} step={1000} suffix=":1" />
-      </div>
-      <NumberField label="최대화면" value={maxDiag} onChange={setMaxDiag} step={10} suffix="인치" />
-
-      <div className="rounded border border-neutral-800 bg-neutral-900/40 p-2">
-        <div className="mb-1 text-[11px] text-neutral-400">
-          throw 환산 — "X인치 거리 Y m"
-        </div>
-        <div className="grid grid-cols-2 gap-1">
-          <NumberField label="화면" value={diagInch} onChange={setDiagInch} step={10} suffix="인치" />
-          <NumberField label="거리" value={distM} onChange={setDistM} step={0.1} suffix="m" />
-        </div>
-        <div className="mt-1 text-[11px] text-neutral-300">
-          → throw ratio ≈{' '}
-          <span className="font-medium">
-            {Number.isFinite(throwRatio) ? throwRatio.toFixed(3) : '—'}
-          </span>
-          <span className="ml-2 text-neutral-500">aspect {aspect.toFixed(3)}</span>
-        </div>
-      </div>
-
-      <button
-        className="w-full rounded bg-emerald-600 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-neutral-700"
-        disabled={!model || !Number.isFinite(throwRatio)}
-        onClick={() => {
-          const spec: ProjectorSpec = {
-            id: 'manual-' + Date.now().toString(36),
-            model: model || '사용자 정의',
-            resolutionLabel: resLabel || undefined,
-            ansiLumen: ansi,
-            resolution: [resW, resH],
-            aspect,
-            throwRatio: { min: throwRatio, max: throwRatio },
-            contrast: contrast || undefined,
-            maxDiagonalInch: maxDiag || undefined,
-          };
-          onCreate(spec);
-        }}
-      >
-        추가
-      </button>
-    </div>
   );
 }

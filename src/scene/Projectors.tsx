@@ -5,16 +5,29 @@ import { PROJECTOR_LIBRARY } from '../data/projectors';
 import {
   buildFrustum,
   projectFrustumOntoRoom,
+  roomPlanes,
   type ProjectorFrustum,
   type V3,
 } from '../physics/frustum';
-import type { ProjectorInstance, ProjectorSpec, Room } from '../types/scenario';
+import type { ProjectorInstance, ProjectorSpec, Room, SurfaceId } from '../types/scenario';
 
-const SELECTED = '#22c55e';     // emerald-500
-const UNSELECTED = '#facc15';   // yellow-400
+/** 프로젝터별 색상 팔레트 — 추가 순서대로 순환 (5대 cap이라 wrap-around는 거의 안 일어남). */
+const PALETTE = [
+  '#22c55e', // emerald
+  '#facc15', // yellow
+  '#3b82f6', // blue
+  '#ec4899', // pink
+  '#f97316', // orange
+  '#06b6d4', // cyan
+  '#a855f7', // purple
+  '#ef4444', // red
+];
+const SELECTED_RING = '#ffffff';
 
 /**
- * 모든 프로젝터를 렌더 — 본체 mesh + frustum 라인 + 면 위 투영 다각형 + 코너 마커.
+ * 프로젝터 N대 렌더 — 본체 + 광축 + frustum 라인 + 면 위 투영 다각형 + 코너 마커.
+ * - 인스턴스마다 PALETTE 색상으로 구분
+ * - 4코너가 모두 같은 면에 떨어진 경우에만 fill mesh를 그리고, 그 면 normal 방향으로 0.005m 오프셋해 면에 정확히 부착
  */
 export default function Projectors() {
   const projectors = useScenarioStore((s) => s.projectors);
@@ -25,18 +38,20 @@ export default function Projectors() {
 
   return (
     <group>
-      {projectors.map((p) => {
+      {projectors.map((p, idx) => {
         if (!p.enabled) return null;
         const spec =
           customSpecs.find((c) => c.id === p.specId) ||
           PROJECTOR_LIBRARY.find((c) => c.id === p.specId);
         if (!spec) return null;
+        const color = PALETTE[idx % PALETTE.length];
         return (
           <ProjectorRender
             key={p.id}
             inst={p}
             spec={spec}
             room={room}
+            color={color}
             selected={p.id === selectedId}
             onSelect={() => selectProjector(p.id)}
           />
@@ -50,34 +65,49 @@ function ProjectorRender({
   inst,
   spec,
   room,
+  color,
   selected,
   onSelect,
 }: {
   inst: ProjectorInstance;
   spec: ProjectorSpec;
   room: Room;
+  color: string;
   selected: boolean;
   onSelect: () => void;
 }) {
   const frustum = useMemo(() => buildFrustum(inst, spec), [inst, spec]);
   const projection = useMemo(() => projectFrustumOntoRoom(frustum, room), [frustum, room]);
-  const color = selected ? SELECTED : UNSELECTED;
 
-  // 4 코너가 모두 면에 닿으면 그 점들을 polygon fan으로 채움.
-  // 면이 다르더라도 시각적 가이드로 그린다 — 정확한 polygon clipping은 M2/3에서.
+  // 4 corner가 모두 같은 면(dominant surface) 위에 있을 때만 fill 그림 → 면에 정확히 부착됨
+  const allSameSurface =
+    projection.surface !== null &&
+    projection.corners.every((c) => c?.surface === projection.surface);
+
+  const surfaceNormal: V3 | null = useMemo(() => {
+    if (!projection.surface) return null;
+    const plane = roomPlanes(room).find((p) => p.id === projection.surface);
+    return plane ? plane.normal : null;
+  }, [projection.surface, room]);
+
   const filledCorners =
-    projection.corners.every((c) => c !== null)
+    allSameSurface && projection.corners.every((c) => c !== null)
       ? (projection.corners.map((c) => c!.point) as [V3, V3, V3, V3])
       : null;
 
   return (
     <group>
-      <ProjectorBody inst={inst} color={color} onSelect={onSelect} />
+      <ProjectorBody inst={inst} color={color} selected={selected} onSelect={onSelect} />
       <FrustumLines frustum={frustum} projection={projection} color={color} />
 
-      {filledCorners && <ProjectionFill corners={filledCorners} color={color} />}
+      {filledCorners && surfaceNormal && (
+        <ProjectionFill
+          corners={filledCorners}
+          color={color}
+          normal={surfaceNormal}
+        />
+      )}
 
-      {/* 광선 끝 마커 */}
       {projection.corners.map((c, i) =>
         c ? <CornerMarker key={i} point={c.point} color={color} /> : null,
       )}
@@ -88,10 +118,12 @@ function ProjectorRender({
 function ProjectorBody({
   inst,
   color,
+  selected,
   onSelect,
 }: {
   inst: ProjectorInstance;
   color: string;
+  selected: boolean;
   onSelect: () => void;
 }) {
   const rad = (d: number) => (d * Math.PI) / 180;
@@ -107,12 +139,20 @@ function ProjectorBody({
         }}
       >
         <boxGeometry args={[0.3, 0.18, 0.4]} />
-        <meshStandardMaterial color={color} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={selected ? 0.4 : 0.15} />
       </mesh>
+      {/* 광축 화살표 */}
       <mesh position={[0, 0, -0.35]} rotation={[Math.PI / 2, 0, 0]}>
         <coneGeometry args={[0.05, 0.12, 12]} />
         <meshStandardMaterial color={color} />
       </mesh>
+      {/* 선택 시 외곽 ring */}
+      {selected && (
+        <mesh>
+          <boxGeometry args={[0.34, 0.22, 0.44]} />
+          <meshBasicMaterial color={SELECTED_RING} wireframe transparent opacity={0.85} />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -171,22 +211,29 @@ function CornerMarker({ point, color }: { point: V3; color: string }) {
 }
 
 /**
- * 4 코너로 만든 사각형(키스톤) 메쉬. 두 삼각형으로 분해.
- * - depthWrite=false / polygonOffset로 z-fighting 방지
- * - 면이 다르더라도 시각적 가이드를 그림(코너가 다른 면이면 휘어진 사각형이 됨)
+ * 4 corner가 모두 같은 면 위에 있을 때 그 면에 딱 붙는 사각형 mesh.
+ * 면 normal 방향으로 epsilon만큼 띄워 z-fighting 방지하면서 시각적으로는 면에 부착된 것처럼 보임.
  */
 function ProjectionFill({
   corners,
   color,
+  normal,
 }: {
   corners: [V3, V3, V3, V3];
   color: string;
+  normal: V3;
 }) {
   const positions = useMemo(() => {
-    const a = corners[0];
-    const b = corners[1];
-    const c = corners[2];
-    const d = corners[3];
+    const eps = 0.005;
+    const offset = (p: V3): V3 => [
+      p[0] + normal[0] * eps,
+      p[1] + normal[1] * eps,
+      p[2] + normal[2] * eps,
+    ];
+    const a = offset(corners[0]);
+    const b = offset(corners[1]);
+    const c = offset(corners[2]);
+    const d = offset(corners[3]);
     return new Float32Array([
       a[0], a[1], a[2],
       b[0], b[1], b[2],
@@ -195,7 +242,7 @@ function ProjectionFill({
       c[0], c[1], c[2],
       d[0], d[1], d[2],
     ]);
-  }, [corners]);
+  }, [corners, normal]);
 
   return (
     <mesh>
@@ -209,13 +256,13 @@ function ProjectionFill({
       <meshBasicMaterial
         color={color}
         transparent
-        opacity={0.55}
+        opacity={0.6}
         side={2 /* DoubleSide */}
         depthWrite={false}
-        polygonOffset
-        polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1}
       />
     </mesh>
   );
 }
+
+// SurfaceId는 import만 하고 직접 사용하지는 않지만 Room 타입에서 참조
+export type { SurfaceId };
